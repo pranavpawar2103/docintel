@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-01-12T11:49:34.804959",
+  "benchmarks": {
+    "ingestion": {
+      "file_size_bytes": 816,
+      "num_chunks": 6,
+      "processing_time_sec": 0.6271109580993652,
+      "chunks_per_sec": 9.567684829148376,
+      "kb_per_sec": 1.2707081413712689
+    },
+    "query": {
+      "num_queries": 5,
+      "avg_latency_sec": 3.6764909744262697,
+      "median_latency_sec": 3.9255945682525635,
+      "p95_latency_sec": 5.355201482772827,
+      "min_latency_sec": 0.8978400230407715,
+      "max_latency_sec": 5.355201482772827,
+      "avg_tokens_per_query": 612.2
+    },
+    "retrieval": {
+      "total_tests": 3,
+      "passed": 0,
+      "failed": 3,
+      "accuracy_percent": 0.0
+    },
+    "cost": {
+      "cost_per_query_usd": 0.00023999999999999998,
+      "cost_per_chunk_usd": 1e-05,
+      "cost_100_queries_usd": 0.023999999999999997,
+      "cost_10_docs_usd": 0.001
+    }
+  }
+}

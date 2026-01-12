@@ -1,0 +1,40 @@
+"""Setup file for DocIntel package."""
+
+from setuptools import setup, find_packages
+
+setup(
+    name="docintel",
+    version="0.1.0",
+    description="Intelligent Document Analysis System with RAG",
+    author="Pranav",
+    packages=find_packages(),
+    python_requires=">=3.11",
+    install_requires=[
+        "python-dotenv>=1.0.0",
+        "pydantic>=2.5.0",
+        "pydantic-settings>=2.1.0",
+        "openai>=1.6.1",
+        "langchain>=0.1.0",
+        "langchain-openai>=0.0.2",
+        "langchain-community>=0.0.10",
+        "chromadb>=0.4.22",
+        "pypdf2>=3.0.1",
+        "python-docx>=1.1.0",
+        "fastapi>=0.109.0",
+        "uvicorn[standard]>=0.27.0",
+        "python-multipart>=0.0.6",
+        "streamlit>=1.30.0",
+        "tiktoken>=0.5.2",
+        "numpy>=1.26.3",
+        "requests>=2.31.0",
+    ],
+    extras_require={
+        "dev": [
+            "pytest>=7.4.4",
+            "pytest-asyncio>=0.23.3",
+            "pytest-cov>=4.1.0",  # For coverage reports
+            "black>=24.1.1",
+            "flake8>=7.0.0",
+        ],
+    },
+)

@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.env
+.venv/
+venv/
+
+data/uploads/*
+data/vectordb/*
+
+*.pdf
+*.docx
+
+.DS_Store
+.ipynb_checkpoints/
