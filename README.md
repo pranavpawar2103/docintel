@@ -416,7 +416,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Pranav** - Master's in Computer Science, University of Ottawa
 
-- LinkedIn: [linkedin.com/in/your-profile](https://www.linkedin.com/in/pranav-pawar-4175741b3/)
+- LinkedIn: [linkedin.com/in/PranavPawar](https://www.linkedin.com/in/pranav-pawar-4175741b3/)
 - Email: pranavpawar2126@gmail.com
 ---
 
