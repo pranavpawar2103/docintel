@@ -76,7 +76,7 @@ We welcome contributions in:
 ### 1. Fork and Clone
 ```bash
 # Fork the repository on GitHub, then:
-git clone https://github.com/YOUR_USERNAME/docintel.git
+git clone https://github.com/pranavpawar2103/docintel.git
 cd docintel
 ```
 
@@ -539,7 +539,7 @@ logger.critical("Critical error")
 - Email: pranavpawar2126@gmail.com
 
 **Found a security issue?**
-Please email security@yourdomain.com (do not create public issue)
+Please email pranavpawar2126@gmail.com (do not create public issue)
 
 ---
 
