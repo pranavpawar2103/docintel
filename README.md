@@ -418,8 +418,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - LinkedIn: [linkedin.com/in/your-profile](https://www.linkedin.com/in/pranav-pawar-4175741b3/)
 - Email: pranavpawar2126@gmail.com
-- Portfolio: [your-website.com](https://your-website.com)
-
 ---
 
 ## 🌟 Show Your Support
