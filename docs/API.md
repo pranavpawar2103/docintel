@@ -410,8 +410,8 @@ Coming in v1.1:
 ## Support
 
 For API issues or questions:
-- GitHub Issues: [github.com/yourusername/docintel/issues](https://github.com/yourusername/docintel/issues)
-- Email: your.email@example.com
+- GitHub Issues: [github.com/pranavpawar2103/docintel/issues](https://github.com/pranavpawar2103/docintel/issues)
+- Email: pranavpawar2126@gmail.com
 
 ---
 

@@ -535,8 +535,8 @@ logger.critical("Critical error")
 ## Getting Help
 
 **Questions?**
-- GitHub Discussions: [github.com/yourusername/docintel/discussions](https://github.com/yourusername/docintel/discussions)
-- Email: your.email@example.com
+- GitHub Discussions: [github.com/pranavpawar2103/docintel/discussions](https://github.com/pranavpawar2103/docintel/discussions)
+- Email: pranavpawar2126@gmail.com
 
 **Found a security issue?**
 Please email security@yourdomain.com (do not create public issue)
