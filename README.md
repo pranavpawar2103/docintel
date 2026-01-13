@@ -91,7 +91,7 @@ print(f"Sources: {len(response['sources'])}")
 ### Quick Install
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/docintel.git
+git clone https://github.com/pranavpawar2103/docintel.git
 cd docintel
 
 # Create virtual environment
