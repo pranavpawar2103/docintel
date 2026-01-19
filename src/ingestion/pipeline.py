@@ -79,6 +79,9 @@ class IngestionPipeline:
         
         # Step 2: Chunk text
         logger.info("Step 2/4: Chunking text...")
+
+        # Use regular chunking (NOT chunk_text_with_pages)
+        # This respects CHUNK_SIZE setting and creates proper-sized chunks
         chunks = self.chunker.chunk_text(
             text=text,
             document_name=Path(file_path).name,

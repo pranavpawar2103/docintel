@@ -240,47 +240,29 @@ class VectorStore:
         """
         Format ChromaDB results into a clean structure.
         
-        ChromaDB returns:
-        {
-            'ids': [['id1', 'id2', ...]],
-            'documents': [['text1', 'text2', ...]],
-            'metadatas': [[{meta1}, {meta2}, ...]],
-            'distances': [[0.1, 0.2, ...]]
-        }
-        
-        We convert to:
-        [
-            {
-                'id': 'id1',
-                'text': 'text1',
-                'metadata': {meta1},
-                'score': 0.95,  # Convert distance to similarity
-                'distance': 0.1
-            },
-            ...
-        ]
+        ChromaDB with cosine distance returns distances in range [0, 2].
+        We convert to similarity scores [0, 1].
         """
         formatted = []
         
         # ChromaDB returns lists of lists (for batch queries)
-        # We only do single queries, so take first element
         ids = raw_results['ids'][0] if raw_results['ids'] else []
         documents = raw_results['documents'][0] if raw_results['documents'] else []
         metadatas = raw_results['metadatas'][0] if raw_results['metadatas'] else []
         distances = raw_results['distances'][0] if raw_results['distances'] else []
         
         for i in range(len(ids)):
-            # Convert distance to similarity score
-            # ChromaDB uses L2 distance (lower = more similar)
-            # We convert to similarity score (higher = more similar)
+            # Convert cosine distance to similarity
+            # ChromaDB cosine distance: 0 = identical, 2 = opposite
+            # Similarity: 1 = identical, 0 = opposite
             distance = distances[i]
-            similarity = 1 / (1 + distance)  # Maps distance to 0-1 range
+            similarity = max(0.0, 1.0 - (distance / 2.0))
             
             formatted.append({
                 'id': ids[i],
                 'text': documents[i],
                 'metadata': metadatas[i],
-                'score': similarity,
+                'score': similarity,  # Now correct!
                 'distance': distance
             })
         

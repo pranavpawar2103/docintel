@@ -99,16 +99,70 @@ class DocumentParser:
         """
         Parse PDF file and extract text with page information.
         
-        Why PyPDF2:
-        - Pure Python (no external dependencies)
-        - Handles most PDFs well
-        - Preserves page structure
-        
-        Limitations:
-        - Struggles with scanned PDFs (would need OCR with pytesseract)
-        - Complex layouts may have text order issues
+        Using PyMuPDF (fitz) for better text extraction.
+        Falls back to PyPDF2 if PyMuPDF not available.
         """
         self.logger.info(f"Parsing PDF: {path.name}")
+        
+        # Try PyMuPDF first (better extraction)
+        try:
+            import fitz  # PyMuPDF
+            
+            doc = fitz.open(path)
+            num_pages = len(doc)
+            
+            # Extract text from each page
+            pages_text = []
+            for page_num in range(num_pages):
+                page = doc[page_num]
+                text = page.get_text()
+                
+                # Clean up excessive whitespace but preserve paragraphs
+                lines = [line.strip() for line in text.split('\n') if line.strip()]
+                text = '\n'.join(lines)
+                
+                pages_text.append(text)
+            
+            doc.close()
+            
+            # Combine all pages with clear separators
+            full_text = '\n'.join(pages_text)
+            
+            # Extract metadata 
+            metadata = {
+                'num_pages': num_pages,
+                'filename': path.name,
+                'file_size': path.stat().st_size,
+                'pages_text': pages_text,  # Keep page-level text
+                'title': path.stem,
+                'author': 'Unknown',
+                'parser': 'pymupdf'
+            }
+            
+            self.logger.info(
+                f"✅ Parsed PDF with PyMuPDF: {num_pages} pages, "
+                f"{len(full_text)} characters"
+            )
+            
+            return full_text, metadata
+            
+        except ImportError:
+            # Fallback to PyPDF2
+            self.logger.warning("PyMuPDF not available, falling back to PyPDF2")
+            return self._parse_pdf_pypdf2(path)
+        except Exception as e:
+            self.logger.error(f"❌ Error parsing PDF with PyMuPDF: {str(e)}")
+            # Try PyPDF2 as fallback
+            try:
+                return self._parse_pdf_pypdf2(path)
+            except:
+                raise
+
+    def _parse_pdf_pypdf2(self, path: Path) -> Tuple[str, Dict]:
+        """
+        Fallback PDF parser using PyPDF2.
+        """
+        self.logger.info(f"Using PyPDF2 for: {path.name}")
         
         try:
             with open(path, 'rb') as file:
@@ -121,9 +175,15 @@ class DocumentParser:
                     page = pdf_reader.pages[page_num]
                     text = page.extract_text()
                     
-                    # Clean up text (remove excessive whitespace)
-                    text = ' '.join(text.split())
-                    pages_text.append(text)
+                    # Better cleaning - preserve structure
+                    if text and text.strip():
+                        # Remove excessive spaces but keep line breaks
+                        lines = [line.strip() for line in text.split('\n') if line.strip()]
+                        text = '\n'.join(lines)
+                        pages_text.append(text)
+                    else:
+                        # Empty page or failed extraction
+                        pages_text.append("")
                 
                 # Combine all pages
                 full_text = '\n\n'.join(pages_text)
@@ -133,10 +193,11 @@ class DocumentParser:
                     'num_pages': num_pages,
                     'filename': path.name,
                     'file_size': path.stat().st_size,
-                    'pages_text': pages_text,  # Keep page-level text for chunking
+                    'pages_text': pages_text,
+                    'parser': 'pypdf2'
                 }
                 
-                # Try to extract PDF metadata (title, author, etc.)
+                # Try to extract PDF metadata
                 if pdf_reader.metadata:
                     metadata['title'] = pdf_reader.metadata.get('/Title', path.stem)
                     metadata['author'] = pdf_reader.metadata.get('/Author', 'Unknown')
@@ -145,15 +206,16 @@ class DocumentParser:
                     metadata['author'] = 'Unknown'
                 
                 self.logger.info(
-                    f" Parsed PDF: {num_pages} pages, "
+                    f"✅ Parsed PDF with PyPDF2: {num_pages} pages, "
                     f"{len(full_text)} characters"
                 )
                 
                 return full_text, metadata
                 
         except Exception as e:
-            self.logger.error(f" Error parsing PDF {path.name}: {str(e)}")
+            self.logger.error(f"❌ Error parsing PDF {path.name}: {str(e)}")
             raise
+    
     
     def _parse_docx(self, path: Path) -> Tuple[str, Dict]:
         """

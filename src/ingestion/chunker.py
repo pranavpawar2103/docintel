@@ -3,9 +3,9 @@ Text Chunking Module
 Intelligently splits documents into optimal-sized chunks for embeddings and retrieval.
 
 Key Concepts:
-- Semantic boundaries: Split at paragraphs/sentences, not mid-word
-- Token limits: Respect embedding model constraints (512 tokens)
-- Overlap: Preserve context between chunks (50 tokens)
+- Token-based chunking: Respect embedding model constraints
+- Sentence boundaries: Don't break mid-sentence
+- Overlap: Preserve context between chunks
 - Metadata preservation: Track page numbers and positions
 """
 
@@ -39,24 +39,16 @@ class ChunkingStats:
 
 class TextChunker:
     """
-    Intelligent text chunker with multiple strategies.
+    Intelligent text chunker optimized for RAG systems.
     
-    This is the heart of our RAG system. Good chunking = good retrieval.
-    Bad chunking = garbage results, no matter how good your embeddings are.
-    
-    Strategy:
-    1. Split by paragraphs (semantic boundaries)
-    2. If paragraph > max_tokens, split by sentences
-    3. If sentence > max_tokens, split by tokens (last resort)
-    4. Add overlap between chunks
-    5. Preserve metadata (page numbers, document info)
+    Fixed version that creates properly-sized chunks.
     """
     
     def __init__(
         self,
         chunk_size: int = None,
         chunk_overlap: int = None,
-        encoding_name: str = "cl100k_base"  # GPT-4, GPT-3.5-turbo encoding
+        encoding_name: str = "cl100k_base"
     ):
         """
         Initialize the chunker.
@@ -65,17 +57,11 @@ class TextChunker:
             chunk_size: Maximum tokens per chunk (default from config)
             chunk_overlap: Token overlap between chunks (default from config)
             encoding_name: Tiktoken encoding to use
-        
-        Why these defaults:
-        - 512 tokens: Good balance between context and precision
-        - 50 token overlap: Preserves context at boundaries
-        - cl100k_base: Works with modern OpenAI models
         """
         self.chunk_size = chunk_size or settings.chunk_size
         self.chunk_overlap = chunk_overlap or settings.chunk_overlap
         
         # Initialize tokenizer
-        # This is how we count tokens (same way OpenAI does)
         try:
             self.encoding = tiktoken.get_encoding(encoding_name)
         except Exception as e:
@@ -88,14 +74,7 @@ class TextChunker:
         )
     
     def count_tokens(self, text: str) -> int:
-        """
-        Count tokens in text using tiktoken.
-        
-        Why we need this:
-        - LLMs charge by token, not by character
-        - "Hello" = 1 token, but "antidisestablishmentarianism" = 6 tokens
-        - Need accurate counts to stay within model limits
-        """
+        """Count tokens in text using tiktoken."""
         return len(self.encoding.encode(text))
     
     def chunk_text(
@@ -108,7 +87,7 @@ class TextChunker:
         """
         Chunk text into optimal-sized pieces.
         
-        This is the main entry point. It orchestrates all chunking strategies.
+        FIXED VERSION - creates proper-sized chunks.
         
         Args:
             text: The full text to chunk
@@ -125,135 +104,181 @@ class TextChunker:
         
         metadata = metadata or {}
         
-        # Strategy 1: Try to split by paragraphs first (most semantic)
-        chunks = self._chunk_by_paragraphs(text)
+        # For PDFs with page information, use page-aware chunking
+        if 'pages_text' in metadata and metadata['pages_text']:
+            return self._chunk_pdf_with_pages(
+                metadata['pages_text'],
+                document_name,
+                document_id,
+                metadata
+            )
         
-        # Strategy 2: If any chunk is too large, split by sentences
-        final_chunks = []
-        for chunk_text in chunks:
-            if self.count_tokens(chunk_text) > self.chunk_size:
-                # Chunk is too large, split by sentences
-                sentence_chunks = self._chunk_by_sentences(chunk_text)
-                final_chunks.extend(sentence_chunks)
-            else:
-                final_chunks.append(chunk_text)
+        # For plain text, use sentence-aware token chunking
+        chunks = self._chunk_by_sentences(text)
         
-        # Strategy 3: If any chunk STILL too large, force split by tokens
-        validated_chunks = []
-        for chunk_text in final_chunks:
-            if self.count_tokens(chunk_text) > self.chunk_size:
-                # Last resort: force split by tokens
-                token_chunks = self._chunk_by_tokens(chunk_text)
-                validated_chunks.extend(token_chunks)
-            else:
-                validated_chunks.append(chunk_text)
+        # Add overlap
+        chunks = self._add_overlap(chunks)
         
-        # Add overlap between chunks
-        overlapped_chunks = self._add_overlap(validated_chunks)
-        
-        # Convert to DocumentChunk objects with metadata
-        document_chunks = self._create_document_chunks(
-            overlapped_chunks,
-            document_name,
-            document_id,
-            metadata
-        )
+        # Convert to DocumentChunk objects
+        document_chunks = []
+        for idx, chunk_text in enumerate(chunks):
+            chunk = DocumentChunk(
+                text=chunk_text,
+                page_number=None,
+                chunk_index=idx,
+                document_name=document_name,
+                document_id=document_id,
+                metadata={
+                    **metadata,
+                    'chunk_tokens': self.count_tokens(chunk_text),
+                    'chunk_chars': len(chunk_text),
+                }
+            )
+            document_chunks.append(chunk)
         
         # Log statistics
-        stats = self._calculate_stats(text, document_chunks)
+        stats = self._calculate_stats_from_chunks(document_chunks)
         logger.info(f"Chunking complete: {stats}")
         
         return document_chunks
     
-    def _chunk_by_paragraphs(self, text: str) -> List[str]:
+    def _chunk_pdf_with_pages(
+        self,
+        pages_text: List[str],
+        document_name: str,
+        document_id: str,
+        metadata: dict
+    ) -> List[DocumentChunk]:
         """
-        Split text by paragraphs (double newlines).
+        Chunk PDF intelligently with page tracking.
         
-        Why paragraphs:
-        - Natural semantic boundaries
-        - Usually contain complete thoughts
-        - Preserve document structure
-        
-        Examples:
-        "Intro paragraph.\n\nSecond paragraph.\n\nThird paragraph."
-        → ["Intro paragraph.", "Second paragraph.", "Third paragraph."]
+        Strategy:
+        - Accumulate text from pages until we reach chunk_size
+        - Split at that point using sentence boundaries
+        - Track which page each chunk starts on
         """
-        # Split on double newlines (paragraph breaks)
-        paragraphs = re.split(r'\n\s*\n', text)
+        all_chunks = []
         
-        # Clean up whitespace
-        paragraphs = [p.strip() for p in paragraphs if p.strip()]
+        # Combine all pages into one text with page markers
+        combined_text = ""
+        page_boundaries = [0]  # Character positions where pages start
         
-        logger.debug(f"Split text into {len(paragraphs)} paragraphs")
-        return paragraphs
+        for page_text in pages_text:
+            combined_text += page_text + "\n\n"
+            page_boundaries.append(len(combined_text))
+        
+        # Chunk the combined text
+        text_chunks = self._chunk_by_sentences(combined_text)
+        text_chunks = self._add_overlap(text_chunks)
+        
+        # Determine page number for each chunk
+        current_pos = 0
+        for idx, chunk_text in enumerate(text_chunks):
+            # Find which page this chunk starts on
+            page_num = 1
+            for p_idx, boundary in enumerate(page_boundaries[1:], start=1):
+                if current_pos < boundary:
+                    page_num = p_idx
+                    break
+            
+            chunk = DocumentChunk(
+                text=chunk_text,
+                page_number=page_num,
+                chunk_index=idx,
+                document_name=document_name,
+                document_id=document_id,
+                metadata={
+                    **metadata,
+                    'chunk_tokens': self.count_tokens(chunk_text),
+                    'chunk_chars': len(chunk_text),
+                }
+            )
+            all_chunks.append(chunk)
+            
+            # Move position forward (accounting for overlap)
+            current_pos += len(chunk_text) - (len(chunk_text) // 4)  # Rough estimate
+        
+        stats = self._calculate_stats_from_chunks(all_chunks)
+        logger.info(f"Chunking complete: {stats}")
+        
+        return all_chunks
     
     def _chunk_by_sentences(self, text: str) -> List[str]:
         """
-        Split text by sentences.
-        
-        Why sentences:
-        - Fallback when paragraphs are too large
-        - Still maintains grammatical completeness
-        - Better than arbitrary character splits
-        
-        Regex explanation:
-        - (?<=[.!?]) : Match after punctuation
-        - \\s+ : Match whitespace
-        - (?=[A-Z]) : Match before capital letter
-        This ensures we split "Hello. World" but not "Mr. Smith"
+        Simple, robust token-based chunking.
+        Splits at paragraph breaks when possible.
         """
-        # Split on sentence boundaries (. ! ? followed by space and capital letter)
-        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
+        # Clean the text first - remove excessive newlines
+        text = re.sub(r'\n+', '\n', text)  # Multiple newlines → single
+        text = re.sub(r'\n', ' ', text)    # Newlines → spaces
+        text = re.sub(r'\s+', ' ', text)   # Multiple spaces → single
         
-        # Clean up
+        # Split into sentences using simple regex
+        # Match: . ! ? followed by space and capital letter OR end of string
+        sentences = re.split(r'(?<=[.!?])(?:\s+(?=[A-Z])|$)', text)
         sentences = [s.strip() for s in sentences if s.strip()]
         
-        logger.debug(f"Split text into {len(sentences)} sentences")
-        return sentences
-    
-    def _chunk_by_tokens(self, text: str) -> List[str]:
-        """
-        Force split text by token count (last resort).
-        
-        Why this is last resort:
-        - Loses semantic meaning
-        - Can split mid-sentence
-        - Only used when paragraph AND sentence splitting failed
-        
-        Algorithm:
-        1. Encode text to tokens
-        2. Split tokens into chunks of chunk_size
-        3. Decode back to text
-        """
-        # Encode to tokens
-        tokens = self.encoding.encode(text)
-        
+        # Build chunks by accumulating sentences
         chunks = []
+        current_chunk = ""
+        current_tokens = 0
+        
+        for sentence in sentences:
+            sentence_tokens = self.count_tokens(sentence)
+            
+            # If adding this sentence exceeds limit
+            if current_tokens + sentence_tokens > self.chunk_size and current_chunk:
+                # Save current chunk
+                chunks.append(current_chunk.strip())
+                current_chunk = sentence
+                current_tokens = sentence_tokens
+            else:
+                # Add to current chunk
+                if current_chunk:
+                    current_chunk += " " + sentence
+                else:
+                    current_chunk = sentence
+                current_tokens = self.count_tokens(current_chunk)
+            
+            # Handle oversized single sentences
+            if sentence_tokens > self.chunk_size:
+                if current_chunk and current_chunk != sentence:
+                    chunks.append(current_chunk.strip())
+                
+                # Force split the long sentence
+                tokens = self.encoding.encode(sentence)
+                for i in range(0, len(tokens), self.chunk_size):
+                    chunk_tokens = tokens[i:i + self.chunk_size]
+                    chunks.append(self.encoding.decode(chunk_tokens))
+                
+                current_chunk = ""
+                current_tokens = 0
+        
+        # Add final chunk
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+    
+    def _force_split_by_tokens(self, text: str) -> List[str]:
+        """
+        Force split text by tokens (when a single sentence is too large).
+        """
+        tokens = self.encoding.encode(text)
+        chunks = []
+        
         for i in range(0, len(tokens), self.chunk_size):
             chunk_tokens = tokens[i:i + self.chunk_size]
             chunk_text = self.encoding.decode(chunk_tokens)
             chunks.append(chunk_text)
         
-        logger.debug(f"Force split into {len(chunks)} token-based chunks")
         return chunks
     
     def _add_overlap(self, chunks: List[str]) -> List[str]:
         """
         Add overlap between consecutive chunks.
         
-        Why overlap is critical:
-        - Prevents information loss at boundaries
-        - Improves retrieval for queries spanning chunk boundaries
-        
-        Example without overlap:
-        Chunk 1: "...the key benefit is accuracy."
-        Chunk 2: "Another advantage is speed..."
-        Query: "What are the benefits?" → Might only retrieve Chunk 1
-        
-        Example with overlap:
-        Chunk 1: "...the key benefit is accuracy. Another advantage"
-        Chunk 2: "accuracy. Another advantage is speed..."
-        Query: "What are the benefits?" → Retrieves both chunks!
+        Overlap helps preserve context at boundaries.
         """
         if len(chunks) <= 1 or self.chunk_overlap == 0:
             return chunks
@@ -262,10 +287,10 @@ class TextChunker:
         
         for i, chunk in enumerate(chunks):
             if i == 0:
-                # First chunk: no prefix overlap needed
+                # First chunk: no prefix overlap
                 overlapped.append(chunk)
             else:
-                # Get tokens from previous chunk for overlap
+                # Get overlap from previous chunk
                 prev_chunk = chunks[i - 1]
                 prev_tokens = self.encoding.encode(prev_chunk)
                 
@@ -280,71 +305,25 @@ class TextChunker:
         logger.debug(f"Added overlap to {len(chunks)} chunks")
         return overlapped
     
-    def _create_document_chunks(
+    def _calculate_stats_from_chunks(
         self,
-        chunks: List[str],
-        document_name: str,
-        document_id: str,
-        metadata: dict
-    ) -> List[DocumentChunk]:
-        """
-        Convert raw text chunks to DocumentChunk objects with metadata.
+        chunks: List[DocumentChunk]
+    ) -> ChunkingStats:
+        """Calculate statistics from DocumentChunk objects."""
+        if not chunks:
+            return ChunkingStats(0, 0, 0, 0, 0, 0)
         
-        This preserves all the important information:
-        - Source document
-        - Position in document (chunk_index)
-        - Page numbers (if available from PDF)
-        - Custom metadata
-        """
-        document_chunks = []
+        chunk_sizes = [self.count_tokens(chunk.text) for chunk in chunks]
+        total_chars = sum(len(chunk.text) for chunk in chunks)
         
-        for idx, chunk_text in enumerate(chunks):
-            # Determine page number (if available from metadata)
-            page_number = self._estimate_page_number(
-                idx,
-                len(chunks),
-                metadata.get('num_pages')
-            )
-            
-            chunk = DocumentChunk(
-                text=chunk_text,
-                page_number=page_number,
-                chunk_index=idx,
-                document_name=document_name,
-                document_id=document_id,
-                metadata={
-                    **metadata,  # Preserve original metadata
-                    'chunk_tokens': self.count_tokens(chunk_text),
-                    'chunk_chars': len(chunk_text),
-                }
-            )
-            document_chunks.append(chunk)
-        
-        return document_chunks
-    
-    def _estimate_page_number(
-        self,
-        chunk_index: int,
-        total_chunks: int,
-        num_pages: Optional[int]
-    ) -> Optional[int]:
-        """
-        Estimate which page a chunk comes from.
-        
-        Why estimate:
-        - For PDFs, we know total pages
-        - We can approximate: chunk 10 of 100 total chunks ≈ page 10 of 100 pages
-        
-        Limitation:
-        - Assumes even distribution (not always true)
-        - Better: track page during parsing (we'll improve this later)
-        """
-        if num_pages is None:
-            return None
-        
-        # Simple estimation: distribute chunks evenly across pages
-        estimated_page = int((chunk_index / total_chunks) * num_pages) + 1
-        return min(estimated_page, num_pages)  # Cap at max page
+        return ChunkingStats(
+            original_text_length=total_chars,
+            num_chunks=len(chunks),
+            avg_chunk_size=sum(chunk_sizes) // len(chunk_sizes) if chunks else 0,
+            min_chunk_size=min(chunk_sizes) if chunk_sizes else 0,
+            max_chunk_size=max(chunk_sizes) if chunk_sizes else 0,
+            total_tokens=sum(chunk_sizes)
+        )
     
     def _calculate_stats(
         self,
@@ -352,16 +331,7 @@ class TextChunker:
         chunks: List[DocumentChunk]
     ) -> ChunkingStats:
         """Calculate statistics about the chunking process."""
-        chunk_sizes = [self.count_tokens(chunk.text) for chunk in chunks]
-        
-        return ChunkingStats(
-            original_text_length=len(original_text),
-            num_chunks=len(chunks),
-            avg_chunk_size=sum(chunk_sizes) // len(chunk_sizes) if chunks else 0,
-            min_chunk_size=min(chunk_sizes) if chunks else 0,
-            max_chunk_size=max(chunk_sizes) if chunks else 0,
-            total_tokens=sum(chunk_sizes)
-        )
+        return self._calculate_stats_from_chunks(chunks)
 
 
 # Convenience function

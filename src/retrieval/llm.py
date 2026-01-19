@@ -282,21 +282,29 @@ Please provide a detailed answer based on the context above."""
         """
         Extract source citations from context chunks.
         
-        Returns list of unique sources with:
-        - document_name
-        - page_number
-        - relevance_score
+        NOW PROPERLY EXTRACTS ALL SOURCES!
         """
         sources = []
         seen = set()  # Track unique sources
         
         for chunk in context_chunks:
-            metadata = chunk['metadata']
+            metadata = chunk.get('metadata', {})
             doc_name = metadata.get('document_name', 'Unknown')
             page_num = metadata.get('page_number', 'N/A')
-            score = chunk.get('score', 0.0)
             
-            # Create unique key
+            # Get similarity score - CHECK BOTH PLACES
+            if 'distance' in chunk:
+                distance = chunk['distance']
+                score = max(0.0, 1.0 - (distance / 2.0))
+            elif 'distance' in metadata:
+                distance = metadata['distance']
+                score = max(0.0, 1.0 - (distance / 2.0))
+            elif 'score' in chunk:
+                score = chunk['score']
+            else:
+                score = 0.0
+            
+            # Create unique key (doc + page)
             source_key = f"{doc_name}_{page_num}"
             
             if source_key not in seen:
@@ -316,31 +324,51 @@ Please provide a detailed answer based on the context above."""
         """
         Calculate confidence score based on retrieval quality.
         
-        Factors:
-        - Average similarity score of retrieved chunks
-        - Number of high-quality chunks (score > 0.7)
-        - Consistency across chunks
-        
-        Returns:
-            Confidence score (0-1)
+        NOW USING CORRECT DISTANCE VALUES!
         """
         if not context_chunks:
             return 0.0
         
-        # Get similarity scores
-        scores = [chunk.get('score', 0.0) for chunk in context_chunks]
+        # Extract similarity scores from chunks
+        similarities = []
+        for chunk in context_chunks:
+            # ChromaDB returns 'distance' in chunk metadata
+            if 'distance' in chunk:
+                distance = chunk['distance']
+                # Convert cosine distance to similarity
+                # Distance: 0 = identical, 2 = opposite
+                similarity = max(0.0, 1.0 - (distance / 2.0))
+            elif 'score' in chunk:
+                # Fallback
+                similarity = chunk['score']
+            else:
+                # No score found
+                similarity = 0.0
+            
+            similarities.append(similarity)
         
-        # Average score
-        avg_score = sum(scores) / len(scores)
+        if not similarities:
+            return 0.0
         
-        # Bonus for multiple high-quality chunks
-        high_quality = sum(1 for s in scores if s > 0.7)
-        quality_bonus = min(high_quality * 0.1, 0.2)
+        # Weighted average favoring top results
+        if len(similarities) >= 3:
+            weights = [0.5, 0.3, 0.2]
+            confidence = sum(sim * weight for sim, weight in zip(similarities[:3], weights))
+        elif len(similarities) == 2:
+            confidence = similarities[0] * 0.6 + similarities[1] * 0.4
+        else:
+            confidence = similarities[0]
         
-        # Final confidence (capped at 1.0)
-        confidence = min(avg_score + quality_bonus, 1.0)
+        # Boost for very strong top result
+        if similarities[0] > 0.85:
+            confidence = min(1.0, confidence * 1.1)
         
-        return confidence
+        # Boost for multiple high-quality results
+        high_quality = sum(1 for s in similarities if s > 0.8)
+        if high_quality >= 2:
+            confidence = min(1.0, confidence * 1.05)
+        
+        return round(confidence, 3)
 
 
 # Convenience function
